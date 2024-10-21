@@ -9,57 +9,68 @@ import SwiftUI
 
 struct ContentView: View {
     @State private var goToIndexView = false
-    @ObservedObject var photoSearcher = PhotoSearcher()
+    @StateObject var photoSearcher = PhotoSearcher() // Ensure using @StateObject
+    @State private var classLabelInput: String = "" // State variable for class label input
+    @State private var selectedPhotoId: String? = nil // State variable to track selected photo's ID
     
     var body: some View {
         NavigationStack {
-            ZStack {
-                switch UIDevice.current.userInterfaceIdiom {
-                case .phone, .pad:
-                    VStack {
-                        Form {
-                            SearchBarView(photoSearcher: photoSearcher)
-                        }
-                        SearchResultsView(goToIndexView: $goToIndexView, photoSearcher: photoSearcher)
-                        Spacer()
-                    }
+            VStack {
+                Form {
+                    SearchBarView(photoSearcher: photoSearcher)
                     
-                case .mac, .unspecified, .tv, .carPlay:
-                    VStack {
-                        HStack {
-                            Spacer(minLength: 300)
-                            Form {
-                                SearchBarView(photoSearcher: photoSearcher)
-                                    .frame(height: 45)
-                                    .font(.title2)
+                    // TextField for class label input
+                    if selectedPhotoId != nil {
+                        TextField("Enter class label", text: $classLabelInput)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .padding()
+                            .onSubmit {
+                                if let photoId = selectedPhotoId {
+                                    if let index = photoSearcher.photoAssets.firstIndex(where: { $0.id == photoId }) {
+                                        photoSearcher.photoAssets[index].classLabel = classLabelInput
+                                        photoSearcher.saveClassLabels() // Save the label
+                                    }
+                                }
                             }
-                            Spacer(minLength: 300)
-                        }
-                        
-                        HStack {
-                            Spacer(minLength: 200)
-                            SearchResultsViewForMac(goToIndexView: $goToIndexView, photoSearcher: photoSearcher)
-                                .font(.title2)
-                            
-                            Spacer(minLength: 200)
-                        }
-                        
-                        Spacer()
-                    }
-                    
-                @unknown default:
-                    VStack {
-                        Form {
-                            SearchBarView(photoSearcher: photoSearcher)
-                        }
-                        SearchResultsView(goToIndexView: $goToIndexView, photoSearcher: photoSearcher)
-                        Spacer()
+                    } else {
+                        Text("Select a photo to assign a class label.")
+                            .foregroundColor(.gray)
+                            .padding()
                     }
                 }
                 
+                // List to display and select photos
+                List(photoSearcher.photoAssets, id: \.id) { asset in
+                    HStack {
+                        ThumbnailView(phAsset: asset.phAsset)
+                            .frame(width: 50, height: 50)
+                            .clipped()
+                        VStack(alignment: .leading) {
+                            Text(asset.classLabel ?? "No ClassLabel")
+                                .font(.subheadline)
+                            if let label = asset.classLabel {
+                                Text("Class Label: \(label)")
+                                    .font(.caption)
+                                    .foregroundColor(.blue)
+                            }
+                        }
+                        Spacer()
+                        if selectedPhotoId == asset.id {
+                            Image(systemName: "checkmark")
+                                .foregroundColor(.blue)
+                        }
+                    }
+                    .contentShape(Rectangle()) // Makes entire row tappable
+                    .onTapGesture {
+                        selectedPhotoId = asset.id
+                        classLabelInput = asset.classLabel ?? ""
+                    }
+                }
+                
+                Spacer()
             }
             .navigationBarTitleDisplayMode(.large)
-            .toolbar() {
+            .toolbar {
                 ToolbarItemGroup {
                     NavigationLink(destination: ConfigView().environmentObject(photoSearcher)) {
                         Label("Config", systemImage: "gearshape")
@@ -75,6 +86,11 @@ struct ContentView: View {
             .navigationDestination(isPresented: $goToIndexView) {
                 BuildIndexView(photoSearcher: photoSearcher)
             }
+            .onAppear {
+                Task {
+                    await photoSearcher.loadPhotos()
+                }
+            }
             .ignoresSafeArea(.keyboard)
         }
         .accentColor(.weakgreen)
@@ -84,6 +100,6 @@ struct ContentView: View {
 
 struct ContentView_Previews: PreviewProvider {
     static var previews: some View {
-        ContentView(photoSearcher: PhotoSearcher())
+        ContentView()
     }
 }

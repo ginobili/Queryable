@@ -11,6 +11,9 @@ struct PhotoAsset: Identifiable {
     var index: Int?
     var phAsset: PHAsset?
     
+    // New property for class label
+    var classLabel: String? // Add this line
+    
     typealias MediaType = PHAssetMediaType
     
     var isFavorite: Bool {
@@ -25,14 +28,17 @@ struct PhotoAsset: Identifiable {
         isFavorite ? "Photo, Favorite" : "Photo"
     }
 
-    init(phAsset: PHAsset, index: Int?) {
+    // Updated initializer to include classLabel
+    init(phAsset: PHAsset, index: Int?, classLabel: String? = nil) { // Modify this line
         self.phAsset = phAsset
         self.index = index
         self.identifier = phAsset.localIdentifier
+        self.classLabel = classLabel // Add this line
     }
     
-    init(identifier: String) {
+    init(identifier: String, classLabel: String? = nil) { // Modify this initializer
         self.identifier = identifier
+        self.classLabel = classLabel // Add this line
         let fetchedAssets = PHAsset.fetchAssets(withLocalIdentifiers: [identifier], options: nil)
         self.phAsset = fetchedAssets.firstObject
     }
@@ -58,7 +64,7 @@ struct PhotoAsset: Identifiable {
             }
             logger.debug("PhotoAsset asset deleted: \(index ?? -1)")
         } catch (let error) {
-            print("Failed to change isFavorite: \(error.localizedDescription)")
+            print("Failed to delete photo: \(error.localizedDescription)")
             logger.error("Failed to delete photo: \(error.localizedDescription)")
         }
     }
@@ -81,4 +87,3 @@ extension PHObject: Identifiable {
 }
 
 fileprivate let logger = Logger(subsystem: "com.mazzystar.Queryable", category: "PhotoAsset")
-

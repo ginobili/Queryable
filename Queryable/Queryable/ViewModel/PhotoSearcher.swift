@@ -39,6 +39,9 @@ class PhotoSearcher: ObservableObject {
     let EMBEDDING_DATA_NAME = "embeddingData"
     let KEY_HAS_ACCESS_TO_PHOTOS = "KEY_HAS_ACCESS_TO_PHOTOS"
     
+    // Add this Published property
+    @Published var photoAssets: [PhotoAsset] = [] // Add this line
+    
     // -3: default, -2: Is searching now, -1: Never indexed. 0: No result. 1: Has result.
     @Published var searchResultCode: SEARCH_RESULT_CODE = .DEFAULT
     @Published var buildIndexCode: BUILD_INDEX_CODE = .DEFAULT
@@ -64,6 +67,8 @@ class PhotoSearcher: ObservableObject {
     private let SAVE_EMBEDDING_EVERY = 5000
     private let EMBEDDING_SIM_COMPARE_FRAGMENT_LENGTH = 1000
     private var emb_sim_dict = [String: Float32]()
+    
+    private let classLabelsKey = "PhotoClassLabels" // Add this line
     
     @Published var TOPK_SIM: Int {
         didSet {
@@ -591,6 +596,53 @@ class PhotoSearcher: ObservableObject {
         self.emb_sim_dict[img_id] = sim
     }
     
+    // New method to load photos into photoAssets
+    func loadPhotos() async {
+        self.buildIndexCode = .LOADING_PHOTOS
+        
+        // Check photo library authorization
+        let authorized = await PhotoLibrary.checkAuthorization()
+        guard authorized else {
+            logger.error("Photo library access was not authorized.")
+            return
+        }
+        
+        do {
+            try await self.photoCollection.load()
+            let assets = self.photoCollection.photoAssets
+            DispatchQueue.main.async {
+                self.photoAssets = Array(assets)
+                // Load saved class labels
+                self.loadClassLabels()
+                self.buildIndexCode = .PHOTOS_LOADED
+            }
+        } catch {
+            logger.error("Failed to load photo collection: \(error.localizedDescription)")
+        }
+    }
+    
+    // New methods to save and load class labels
+    func saveClassLabels() {
+        var labelsDictionary = [String: String]()
+        for asset in photoAssets {
+            if let classLabel = asset.classLabel {
+                labelsDictionary[asset.identifier] = classLabel
+            }
+        }
+        UserDefaults.standard.set(labelsDictionary, forKey: classLabelsKey)
+    }
+    
+    private func loadClassLabels() {
+        if let labelsDictionary = UserDefaults.standard.dictionary(forKey: classLabelsKey) as? [String: String] {
+            for i in 0..<photoAssets.count {
+                let asset = photoAssets[i]
+                if let classLabel = labelsDictionary[asset.identifier] {
+                    photoAssets[i].classLabel = classLabel
+                }
+            }
+        }
+    }
+    
 }
 
 
@@ -612,3 +664,4 @@ public func clearCache(){
 
 
 fileprivate let logger = Logger(subsystem: "com.mazzystar.Queryable", category: "PhotoSearcher")
+
