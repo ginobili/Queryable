@@ -31,12 +31,19 @@ struct ThumbnailView: View {
 
         PHImageManager.default().requestImage(
             for: phAsset,
-            targetSize: CGSize(width: 50, height: 50),
+            targetSize: CGSize(width: 50, height: 50), // Adjust as needed
             contentMode: .aspectFill,
             options: options) { result, info in
                 if let result = result {
                     self.image = result
                 }
             }
+    }
+}
+
+struct ThumbnailView_Previews: PreviewProvider {
+    static var previews: some View {
+        ThumbnailView(phAsset: nil)
+            .previewLayout(.sizeThatFits)
     }
 }

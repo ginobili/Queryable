@@ -9,6 +9,7 @@ import UIKit
 import Photos
 import CoreML
 import Accelerate
+import SwiftUI
 
 // search result code.
  enum SEARCH_RESULT_CODE: Int {
@@ -39,10 +40,10 @@ class PhotoSearcher: ObservableObject {
     let EMBEDDING_DATA_NAME = "embeddingData"
     let KEY_HAS_ACCESS_TO_PHOTOS = "KEY_HAS_ACCESS_TO_PHOTOS"
     
-    // Add this Published property
-    @Published var photoAssets: [PhotoAsset] = [] // Add this line
+    // Published property to manage photos
+    @Published var photoAssets: [PhotoAsset] = [] // Added
     
-    // -3: default, -2: Is searching now, -1: Never indexed. 0: No result. 1: Has result.
+    // Existing Published properties
     @Published var searchResultCode: SEARCH_RESULT_CODE = .DEFAULT
     @Published var buildIndexCode: BUILD_INDEX_CODE = .DEFAULT
     @Published var totalUnIndexedPhotosNum: Int = -1
@@ -68,7 +69,7 @@ class PhotoSearcher: ObservableObject {
     private let EMBEDDING_SIM_COMPARE_FRAGMENT_LENGTH = 1000
     private var emb_sim_dict = [String: Float32]()
     
-    private let classLabelsKey = "PhotoClassLabels" // Add this line
+    private let classLabelsKey = "PhotoClassLabels" // Added
     
     @Published var TOPK_SIM: Int {
         didSet {
@@ -104,12 +105,12 @@ class PhotoSearcher: ObservableObject {
             print("Load photos embedding failure.")
         }
         
-        // set network authorization
+        // Set network authorization
         await self.photoCollection.cache.requestOptions.isNetworkAccessAllowed = false
         
         // Get the current authorization state.
         let status = PHPhotoLibrary.authorizationStatus()
-        if (status == .authorized) {
+        if status == .authorized {
             // Access has been granted.
             defaults.set(true, forKey: self.KEY_HAS_ACCESS_TO_PHOTOS)
             print("KEY_HAS_ACCESS_TO_PHOTOS has been updated to true.")
@@ -416,38 +417,32 @@ class PhotoSearcher: ObservableObject {
      Search Part
      */
     func search(with query: String) async {
-        // clean before results.
-        self.searchString = query
-        self.searchResultPhotoAssets = [PhotoAsset]()
-        
-        self.searchResultCode = .IS_SEARCHING
         do {
             if self.savedEmbedding.isEmpty {
                 print("Never indexed.")
                 self.searchResultCode = .NEVER_INDEXED
             } else {
-                // search from indexed result
                 print("Has indexed data, now begin to search.")
                 print("Test if I can fetch all photos: \(self.photoCollection.photoAssets.count)")
                 
-                // Filter whether Photo has been deleted.
                 if !self.allPhotosId.isEmpty {
                     let startingTime = Date()
                     
                     var cnt = 0
                     for key in self.savedEmbedding.keys {
                         if let _ = self.allPhotosId[key] {
+                            // Photo exists
                         } else {
                             cnt += 1
                             self.savedEmbedding.removeValue(forKey: key)
                         }
                     }
-                    print("\(cnt) keys in savedEmbedding has been deleted.")
+                    print("\(cnt) keys in savedEmbedding have been deleted.")
                     
                     if cnt > 0 {
                         self.updateEmbedding(new_indexed_results: [String : MLMultiArray]())
                     }
-                    print("\(startingTime.timeIntervalSinceNow * -1) seconds used for save the updated embedding to file.")
+                    print("\(startingTime.timeIntervalSinceNow * -1) seconds used for saving the updated embedding to file.")
                 }
                 
                 print("Searching query = \(query)")
@@ -455,35 +450,26 @@ class PhotoSearcher: ObservableObject {
                 print(_text_emb)
                 
                 let startingTime = Date()
-    
-                
+
                 let img_emb_pieces_lst = self.seperateEmbeddingsByCoreNums(img_embs_dict: self.savedEmbedding)
                 
-                // 6.69201397895813 seconds used for calculat sim between 34639 embs before.
-                // self.simpleComputeAllEmbeddingSim(text_emb: _text_emb, img_emb_pieces_lst: img_emb_pieces_lst)
-                
-                // reduce to 2.8s.
                 try await self.batchComputeEmbeddingSimilarity(text_emb: _text_emb, img_embs_dict_lst: img_emb_pieces_lst)
-                print("\(startingTime.timeIntervalSinceNow * -1) seconds used for calculat sim between \(self.savedEmbedding.keys.count) embs.")
+                print("\(startingTime.timeIntervalSinceNow * -1) seconds used for calculating sim between \(self.savedEmbedding.keys.count) embs.")
                 
                 let startingTime2 = Date()
-                // 0.20966589450836182 seconds used for find top3 sim in 34639 scores.
                 
                 let FINAL_TOP_K = min(self.TOPK_SIM, self.emb_sim_dict.count)
                 let topK_sim = self.emb_sim_dict.sorted { $0.value > $1.value }.prefix(FINAL_TOP_K)
-                print("\(startingTime2.timeIntervalSinceNow * -1) seconds used for find top\(FINAL_TOP_K) sim in \(self.emb_sim_dict.keys.count) scores.")
+                print("\(startingTime2.timeIntervalSinceNow * -1) seconds used for finding top\(FINAL_TOP_K) sim in \(self.emb_sim_dict.keys.count) scores.")
                 
                 let startingTime3 = Date()
                 
-                for photo in topK_sim {
-                    let photoSim = photo.value
+                self.searchResultPhotoAssets = topK_sim.map { photo in
                     let photoID = photo.key
-                    logger.debug("photoID: \(photoID), sim: \(photoSim)")
-                    
-                    let _asset = PhotoAsset(identifier: photoID)
-                    self.searchResultPhotoAssets.append(_asset)
+                    return PhotoAsset(identifier: photoID)
                 }
-                print("\(startingTime3.timeIntervalSinceNow * -1) seconds used for download top\(FINAL_TOP_K) sim images.")
+                
+                print("\(startingTime3.timeIntervalSinceNow * -1) seconds used for downloading top\(FINAL_TOP_K) sim images.")
                 
                 self.searchResultCode = .HAS_RESULT
             }
@@ -492,9 +478,7 @@ class PhotoSearcher: ObservableObject {
             logger.error("Failed to search photos: \(error.localizedDescription)")
         }
     }
-    
-    
-    /**
+      /**
      Similarity ranking
      */
     func similarPhoto(with photoAsset: PhotoAsset) async {
@@ -535,6 +519,7 @@ class PhotoSearcher: ObservableObject {
             logger.error("Failed to search photos: \(error.localizedDescription)")
         }
     }
+    
     
     private func seperateEmbeddingsByCoreNums(img_embs_dict: [String: MLMultiArray]) -> [[String: MLMultiArray]]{
         let  processors = ProcessInfo.processInfo.activeProcessorCount
@@ -596,7 +581,7 @@ class PhotoSearcher: ObservableObject {
         self.emb_sim_dict[img_id] = sim
     }
     
-    // New method to load photos into photoAssets
+    // Method to load photos into photoAssets
     func loadPhotos() async {
         self.buildIndexCode = .LOADING_PHOTOS
         
@@ -610,18 +595,29 @@ class PhotoSearcher: ObservableObject {
         do {
             try await self.photoCollection.load()
             let assets = self.photoCollection.photoAssets
+            
             DispatchQueue.main.async {
                 self.photoAssets = Array(assets)
-                // Load saved class labels
                 self.loadClassLabels()
-                self.buildIndexCode = .PHOTOS_LOADED
             }
+            
+            // Check if we need to build the index
+            try await self.fetchUnIndexedPhotos()
+            
+            if self.savedEmbedding.isEmpty || !self.unIndexedPhotos.isEmpty {
+                print("Need to build/update index for \(self.unIndexedPhotos.count) photos")
+                self.buildIndexCode = .PHOTOS_LOADED // Trigger the index building process
+            } else {
+                print("Index is up to date")
+                self.buildIndexCode = .BUILD_FINISHED
+            }
+            
         } catch {
             logger.error("Failed to load photo collection: \(error.localizedDescription)")
         }
     }
     
-    // New methods to save and load class labels
+    // Methods to save and load class labels
     func saveClassLabels() {
         var labelsDictionary = [String: String]()
         for asset in photoAssets {
@@ -643,6 +639,15 @@ class PhotoSearcher: ObservableObject {
         }
     }
     
+    func assignClassLabel(to photoId: String, with label: String) {
+        if let index = photoAssets.firstIndex(where: { $0.id == photoId }) {
+            photoAssets[index].classLabel = label
+            print("Assigned label '\(label)' to photo with ID \(photoId)")
+        }
+    }
+
+    // Removed updateSearchResults() function
+
 }
 
 
@@ -664,4 +669,17 @@ public func clearCache(){
 
 
 fileprivate let logger = Logger(subsystem: "com.mazzystar.Queryable", category: "PhotoSearcher")
+
+
+
+
+
+
+
+
+
+
+
+
+
 

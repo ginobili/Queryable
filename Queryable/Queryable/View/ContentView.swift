@@ -9,62 +9,84 @@ import SwiftUI
 
 struct ContentView: View {
     @State private var goToIndexView = false
-    @StateObject var photoSearcher = PhotoSearcher() // Ensure using @StateObject
-    @State private var classLabelInput: String = "" // State variable for class label input
-    @State private var selectedPhotoId: String? = nil // State variable to track selected photo's ID
-    
+    @StateObject var photoSearcher = PhotoSearcher()
+    @State private var classLabelInput: String = ""
+    @State private var selectedPhotoIds: Set<String> = []
+
     var body: some View {
         NavigationStack {
             VStack {
                 Form {
                     SearchBarView(photoSearcher: photoSearcher)
                     
-                    // TextField for class label input
-                    if selectedPhotoId != nil {
-                        TextField("Enter class label", text: $classLabelInput)
-                            .textFieldStyle(RoundedBorderTextFieldStyle())
-                            .padding()
-                            .onSubmit {
-                                if let photoId = selectedPhotoId {
-                                    if let index = photoSearcher.photoAssets.firstIndex(where: { $0.id == photoId }) {
-                                        photoSearcher.photoAssets[index].classLabel = classLabelInput
-                                        photoSearcher.saveClassLabels() // Save the label
-                                    }
+                    if !selectedPhotoIds.isEmpty {
+                        VStack(alignment: .leading) {
+                            Text("Assign Class Label to Selected Photos")
+                                .font(.headline)
+                            
+                            TextField("Enter class label", text: $classLabelInput)
+                                .textFieldStyle(RoundedBorderTextFieldStyle())
+                                .padding(.vertical, 5)
+                                .onSubmit {
+                                    assignClassLabel()
                                 }
+                            
+                            Button(action: assignClassLabel) {
+                                Text("Assign Label")
+                                    .frame(maxWidth: .infinity)
+                                    .padding()
+                                    .background(Color.blue)
+                                    .foregroundColor(.white)
+                                    .cornerRadius(8)
                             }
+                            .disabled(classLabelInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        }
+                        .padding(.vertical)
                     } else {
-                        Text("Select a photo to assign a class label.")
+                        Text("Select one or more photos to assign a class label.")
                             .foregroundColor(.gray)
                             .padding()
                     }
                 }
                 
-                // List to display and select photos
-                List(photoSearcher.photoAssets, id: \.id) { asset in
+                // Display search results
+                List(photoSearcher.searchResultPhotoAssets, id: \.id, selection: $selectedPhotoIds) { asset in
                     HStack {
                         ThumbnailView(phAsset: asset.phAsset)
                             .frame(width: 50, height: 50)
                             .clipped()
+                        
                         VStack(alignment: .leading) {
-                            Text(asset.classLabel ?? "No ClassLabel")
+                            // Ensure this Text view is displaying the updated class label
+                            Text(asset.classLabel ?? "No Description")
                                 .font(.subheadline)
+                            
                             if let label = asset.classLabel {
                                 Text("Class Label: \(label)")
                                     .font(.caption)
                                     .foregroundColor(.blue)
                             }
                         }
+                        
                         Spacer()
-                        if selectedPhotoId == asset.id {
-                            Image(systemName: "checkmark")
+                        
+                        if selectedPhotoIds.contains(asset.id) {
+                            Image(systemName: "checkmark.circle.fill")
                                 .foregroundColor(.blue)
                         }
                     }
-                    .contentShape(Rectangle()) // Makes entire row tappable
+                    .contentShape(Rectangle())
                     .onTapGesture {
-                        selectedPhotoId = asset.id
-                        classLabelInput = asset.classLabel ?? ""
+                        toggleSelection(for: asset.id)
+                        if selectedPhotoIds.contains(asset.id) {
+                            classLabelInput = asset.classLabel ?? ""
+                        } else {
+                            classLabelInput = ""
+                        }
                     }
+                }
+                .toolbar {
+                    EditButton()
                 }
                 
                 Spacer()
@@ -88,7 +110,11 @@ struct ContentView: View {
             }
             .onAppear {
                 Task {
+                    await photoSearcher.prepareModelForSearch()
                     await photoSearcher.loadPhotos()
+                    if photoSearcher.buildIndexCode == .PHOTOS_LOADED {
+                        goToIndexView = true
+                    }
                 }
             }
             .ignoresSafeArea(.keyboard)
@@ -96,10 +122,31 @@ struct ContentView: View {
         .accentColor(.weakgreen)
         .navigationViewStyle(StackNavigationViewStyle())
     }
-}
-
-struct ContentView_Previews: PreviewProvider {
-    static var previews: some View {
-        ContentView()
+    
+    struct ContentView_Previews: PreviewProvider {
+        static var previews: some View {
+            ContentView()
+        }
+    }
+    
+    private func toggleSelection(for photoId: String) {
+        if selectedPhotoIds.contains(photoId) {
+            selectedPhotoIds.remove(photoId)
+        } else {
+            selectedPhotoIds.insert(photoId)
+        }
+    }
+    
+    private func assignClassLabel() {
+        print("assignClassLabel called")
+        let trimmedLabel = classLabelInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedLabel.isEmpty else { return }
+        
+        for photoId in selectedPhotoIds {
+            photoSearcher.assignClassLabel(to: photoId, with: trimmedLabel)
+        }
+        photoSearcher.saveClassLabels()
+        classLabelInput = ""
+        selectedPhotoIds.removeAll()
     }
 }

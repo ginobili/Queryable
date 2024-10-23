@@ -15,7 +15,6 @@ extension Color {
 struct SearchResultsView: View {
     @Binding var goToIndexView: Bool
     @ObservedObject var photoSearcher: PhotoSearcher
-//    private let imageSize = CGSize(width: 1024, height: 1024)
     
     var body: some View {
         switch photoSearcher.searchResultCode {
@@ -29,8 +28,7 @@ struct SearchResultsView: View {
                     await photoSearcher.prepareModelForSearch()
                     
                     let hasAccessToPhotos = UserDefaults.standard.bool(forKey: photoSearcher.KEY_HAS_ACCESS_TO_PHOTOS)
-                    if hasAccessToPhotos == true {
-                        // which means I have the access to Photo Library.
+                    if hasAccessToPhotos {
                         await photoSearcher.fetchPhotos()
                     }
                 }
@@ -38,7 +36,6 @@ struct SearchResultsView: View {
         case .MODEL_PREPARED:
             Text("")
         case .IS_SEARCHING:
-            // Searching...
             ProgressView() {
                 Text("Searching...")
                     .accessibilityAddTraits(.isStaticText)
@@ -46,11 +43,8 @@ struct SearchResultsView: View {
             }
             .padding(.top, -UIScreen.main.bounds.height * 0.65)
         case .NEVER_INDEXED:
-            // User never searched before
             FirstTimeSearchView(photoSearcher: photoSearcher)
-            
         case .NO_RESULT:
-            // Really no result
             VStack {
                 Text("No photos matched your query.")
                     .foregroundColor(.gray)
@@ -62,13 +56,10 @@ struct SearchResultsView: View {
             }
             .padding(.top, -UIScreen.main.bounds.height * 0.3)
         case .HAS_RESULT:
-            // Has result
             VStack {
                 if photoSearcher.totalUnIndexedPhotosNum > 0 {
                     UpdateIndexView(goToIndexView: $goToIndexView, photoSearcher: photoSearcher)
                 }
-                
-                // Top 1 result
                 
                 ScrollView {
                     if photoSearcher.searchResultPhotoAssets.count > 0 {
@@ -82,14 +73,12 @@ struct SearchResultsView: View {
                     } else {
                         EmptyView()
                     }
-                    
                 }
                 Spacer()
             }
             .padding(.top, -UIScreen.main.bounds.height * 0.32)
         }
     }
-    
 }
 
 
@@ -314,3 +303,4 @@ public extension UIDevice {
     }()
 
 }
+
